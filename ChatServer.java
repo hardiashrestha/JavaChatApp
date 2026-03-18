@@ -1,111 +1,45 @@
 import java.io.*;
 import java.net.*;
+import java.security.*;
 import java.util.*;
+import java.util.concurrent.*;
 
 public class ChatServer {
+    static final int PORT = Integer.parseInt(System.getenv().getOrDefault("PORT", "8080"));
+    static final Set<ClientHandler> clients = Collections.synchronizedSet(new HashSet<>());
+    static int userCount = 0;
 
-    private static Set<ClientHandler> clientHandlers = 
-            Collections.synchronizedSet(new HashSet<>());
-
-    public static void main(String[] args) {
-
-        int port = 1234;
-
-        System.out.println("=================================");
-        System.out.println("        CHAT SERVER STARTED");
-        System.out.println("        Port: " + port);
-        System.out.println("=================================");
-
-        try (ServerSocket serverSocket = new ServerSocket(port)) {
-
-            while (true) {
-                Socket socket = serverSocket.accept();
-                System.out.println("New client connected: " + socket.getInetAddress());
-
-                ClientHandler handler = new ClientHandler(socket);
-                clientHandlers.add(handler);
-                new Thread(handler).start();
-            }
-
-        } catch (IOException e) {
-            System.out.println("Server error: " + e.getMessage());
+    public static void main(String[] args) throws Exception {
+        ServerSocket serverSocket = new ServerSocket(PORT);
+        System.out.println("AnonChat server running on port " + PORT);
+        ExecutorService pool = Executors.newCachedThreadPool();
+        while (true) {
+            Socket socket = serverSocket.accept();
+            pool.execute(new ClientHandler(socket));
         }
     }
 
-    // Broadcast message to all clients
-    static void broadcast(String message, ClientHandler excludeUser) {
-        synchronized (clientHandlers) {
-            for (ClientHandler client : clientHandlers) {
-                if (client != excludeUser) {
-                    client.sendMessage(message);
-                }
+    static void broadcast(String json) {
+        synchronized (clients) {
+            for (ClientHandler c : new ArrayList<>(clients)) {
+                c.sendWs(json);
             }
         }
-        System.out.println("Broadcasted: " + message);
     }
 
-    static class ClientHandler implements Runnable {
+    static void addClient(ClientHandler c) {
+        clients.add(c);
+        broadcast("{\"type\":\"system\",\"text\":\"" + c.name + " joined the chat\",\"count\":" + clients.size() + "}");
+        System.out.println(c.name + " connected. Online: " + clients.size());
+    }
 
-        private Socket socket;
-        private PrintWriter out;
-        private BufferedReader in;
-        private String username;
+    static void removeClient(ClientHandler c) {
+        clients.remove(c);
+        broadcast("{\"type\":\"system\",\"text\":\"" + c.name + " left the chat\",\"count\":" + clients.size() + "}");
+        System.out.println(c.name + " disconnected. Online: " + clients.size());
+    }
 
-        public ClientHandler(Socket socket) {
-            this.socket = socket;
-        }
-
-        public void run() {
-            try {
-                in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-                out = new PrintWriter(socket.getOutputStream(), true);
-
-                // First message should be join message with username
-                String joinMessage = in.readLine();
-                if (joinMessage != null) {
-                    username = extractUsername(joinMessage);
-                    broadcast(joinMessage, this);
-                }
-
-                String message;
-
-                while ((message = in.readLine()) != null) {
-
-                    // If user leaves
-                    if (message.contains("has left the chat")) {
-                        broadcast(message, this);
-                        break;
-                    }
-
-                    broadcast(message, this);
-                }
-
-            } catch (IOException e) {
-                System.out.println("Connection lost with " + username);
-            } finally {
-                try {
-                    socket.close();
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
-
-                clientHandlers.remove(this);
-
-                if (username != null) {
-                    String leaveMsg = "🔴 " + username + " disconnected.";
-                    broadcast(leaveMsg, this);
-                }
-            }
-        }
-
-        void sendMessage(String message) {
-            out.println(message);
-        }
-
-        private String extractUsername(String message) {
-            return message.replace("🔵 ", "")
-                          .replace(" has joined the chat.", "")
-                          .trim();
-        }
+    static synchronized String nextName() {
+        return "Anon" + (++userCount);
     }
 }
