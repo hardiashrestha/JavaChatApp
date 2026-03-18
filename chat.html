@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Pro Chat</title>
+<style>
+body {
+    font-family: Arial;
+    background: #f3f4f6;
+}
+#chat {
+    height: 400px;
+    overflow-y: scroll;
+    background: white;
+    padding: 10px;
+    border-radius: 10px;
+}
+input {
+    padding: 10px;
+    width: 70%;
+}
+button {
+    padding: 10px;
+    background: #2563eb;
+    color: white;
+    border: none;
+}
+</style>
+</head>
+<body>
+
+<h2>🌐 Web Chat</h2>
+
+<div id="chat"></div>
+<br>
+<input type="text" id="message" placeholder="Type message...">
+<button onclick="sendMessage()">Send</button>
+
+<script>
+let username = prompt("Enter your name:");
+let socket = new WebSocket("ws://192.168.1.2:8080");
+
+socket.onmessage = function(event) {
+    let chat = document.getElementById("chat");
+    chat.innerHTML += "<div>" + event.data + "</div>";
+    chat.scrollTop = chat.scrollHeight;
+};
+
+function sendMessage() {
+    let input = document.getElementById("message");
+    let msg = username + ": " + input.value;
+    socket.send(msg);
+    input.value = "";
+}
+</script>
+
+</body>
+</html>
